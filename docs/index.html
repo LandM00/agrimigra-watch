@@ -94,6 +94,7 @@
     background:var(--surface-alt); border:1px solid var(--line); border-radius:7px; padding:9px 11px;
   }
   .field textarea{min-height:64px; resize:vertical; line-height:1.4;}
+  .field textarea::placeholder{color:var(--ink-muted); opacity:1;}
   .field-help{font-size:12px; color:var(--ink-muted); margin-top:5px;}
   .settings-actions{ display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:18px; }
   button.save, button.refresh{
@@ -164,8 +165,8 @@
     <div class="settings-body">
       <div class="field">
         <label for="kwInput">Parole chiave (separate da virgola)</label>
-        <textarea id="kwInput" spellcheck="false"></textarea>
-        <p class="field-help">Usate dalla scansione automatica per orientare la ricerca: nomi di programmi, temi, aree geografiche.</p>
+        <textarea id="kwInput" spellcheck="false" placeholder="migrazione, lavoro agricolo, migrant labour agriculture"></textarea>
+        <p class="field-help">Usate dalla scansione automatica per orientare la ricerca: nomi di programmi, temi, aree geografiche. Il testo in grigio è quello usato di default se lasci il campo vuoto: inizia a scrivere per sostituirlo con le tue parole chiave.</p>
       </div>
       <div class="field">
         <label for="freqInput">Frequenza di scansione</label>
