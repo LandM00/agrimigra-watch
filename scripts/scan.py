@@ -291,11 +291,19 @@ def search_funding_tenders_portal(keywords):
     """Interroga l'API pubblica (non ufficialmente documentata) del portale
     EU Funding & Tenders per Horizon Europe. Se l'endpoint cambia o non
     risponde come atteso, la funzione fallisce in modo silenzioso: non deve
-    mai bloccare il resto dello scan."""
+    mai bloccare il resto dello scan.
+
+    Cerca UNA parola chiave alla volta (non tutte insieme come frase unica):
+    unirle in un'unica frase tra virgolette richiederebbe che un bando
+    contenga letteralmente tutte quelle parole in quell'ordine esatto, cosa
+    che in pratica non succede mai — il risultato sarebbe sempre zero anche
+    quando ci sono bandi pertinenti. Cercandole una per volta e unendo i
+    risultati (senza doppioni), basta che una call contenga anche solo una
+    delle parole chiave per comparire."""
     results = []
+    seen_ids = set()
     url = "https://api.tech.ec.europa.eu/search-api/prod/rest/search"
-    text_query = " ".join(keywords[:6]) if keywords else "migration agriculture"
-    params = {"apiKey": "SEDIA", "text": '"{}"'.format(text_query), "pageSize": 15, "pageNumber": 1}
+    terms = [k for k in (keywords or []) if k][:6] or ["migration", "agriculture"]
     body = {
         "query": {
             "bool": {
@@ -306,31 +314,37 @@ def search_funding_tenders_portal(keywords):
             }
         }
     }
-    try:
-        resp = requests.post(url, params=params, json=body, headers=HTTP_HEADERS, timeout=HTTP_TIMEOUT)
-        resp.raise_for_status()
-        data = resp.json()
-        hits = (data.get("results") or data.get("hits") or [])
-        for hit in hits:
-            fields = hit.get("metadata", hit)
-            title = _first(fields, ["title", "callTitle"]) or "Bando Horizon Europe"
-            identifier = _first(fields, ["identifier", "callIdentifier", "reference"])
-            deadline = _first(fields, ["deadlineDate", "deadline"])
-            item_id = "horizon-" + slugify(identifier or title)
-            results.append({
-                "id": item_id,
-                "title": title if not identifier else "{} ({})".format(title, identifier),
-                "funder": "Commissione Europea — Horizon Europe / Funding & Tenders Portal",
-                "category": "funding",
-                "status": "open",
-                "deadlineDate": _parse_date(deadline),
-                "tags": ["UE", "Horizon Europe"],
-                "summary": "Trovato tramite ricerca automatica per parola chiave sul portale Funding & Tenders. Verificare rilevanza e requisiti sulla pagina ufficiale.",
-                "url": "https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/calls-for-proposals?callIdentifier=" + (identifier or ""),
-                "source": "funding-tenders-api",
-            })
-    except Exception as exc:  # noqa: BLE001 — vogliamo continuare comunque
-        print("Avviso: ricerca su Funding & Tenders Portal non riuscita ({}). Salto questa fonte.".format(exc))
+    for term in terms:
+        params = {"apiKey": "SEDIA", "text": '"{}"'.format(term), "pageSize": 15, "pageNumber": 1}
+        try:
+            resp = requests.post(url, params=params, json=body, headers=HTTP_HEADERS, timeout=HTTP_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            hits = (data.get("results") or data.get("hits") or [])
+            for hit in hits:
+                fields = hit.get("metadata", hit)
+                title = _first(fields, ["title", "callTitle"]) or "Bando Horizon Europe"
+                identifier = _first(fields, ["identifier", "callIdentifier", "reference"])
+                deadline = _first(fields, ["deadlineDate", "deadline"])
+                item_id = "horizon-" + slugify(identifier or title)
+                if item_id in seen_ids:
+                    continue
+                seen_ids.add(item_id)
+                results.append({
+                    "id": item_id,
+                    "title": title if not identifier else "{} ({})".format(title, identifier),
+                    "funder": "Commissione Europea — Horizon Europe / Funding & Tenders Portal",
+                    "category": "funding",
+                    "status": "open",
+                    "deadlineDate": _parse_date(deadline),
+                    "tags": ["UE", "Horizon Europe"],
+                    "summary": "Trovato tramite ricerca automatica per la parola chiave \"{}\" sul portale Funding & Tenders. Verificare rilevanza e requisiti sulla pagina ufficiale.".format(term),
+                    "url": "https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/calls-for-proposals?callIdentifier=" + (identifier or ""),
+                    "source": "funding-tenders-api",
+                })
+        except Exception as exc:  # noqa: BLE001 — vogliamo continuare comunque
+            print("Avviso: ricerca su Funding & Tenders Portal per \"{}\" non riuscita ({}). Salto questo termine.".format(term, exc))
+    print("Portale Funding & Tenders: {} risultati unici su {} parole chiave cercate.".format(len(results), len(terms)))
     return results
 
 
