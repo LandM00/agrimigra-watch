@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Chiunque abbia il link dell'app può leggere e modificare le impostazioni
+    // (parole chiave, frequenza). Nessun login: adatto a un uso privato/familiare
+    // con URL non pubblicizzato, non a un progetto esposto pubblicamente.
+    match /config/main {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Stato dell'ultima scansione: leggibile da tutti, scrivibile SOLO dallo
+    // script che gira su GitHub Actions (usa la Admin SDK, che ignora queste
+    // regole). Nessun client web può scriverci.
+    match /meta/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Elenco dei bandi trovati: stessa logica, sola lettura dal client.
+    match /calls/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

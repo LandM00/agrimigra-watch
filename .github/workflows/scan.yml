@@ -1,0 +1,30 @@
+name: Scansione bandi AgriMigra Watch
+
+on:
+  schedule:
+    # Ogni 6 ore. GitHub esegue i cron con qualche minuto di ritardo nei
+    # momenti di picco: è normale non partire esattamente al minuto 0.
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+    # Permette anche di lanciare la scansione a mano dalla scheda "Actions"
+    # del repository su GitHub, senza aspettare il prossimo giro.
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repository
+        uses: actions/checkout@v4
+
+      - name: Imposta Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa le dipendenze
+        run: pip install -r scripts/requirements.txt
+
+      - name: Esegui lo scraper
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python scripts/scan.py

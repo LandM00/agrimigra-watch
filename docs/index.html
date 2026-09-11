@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgriMigra Watch</title>
+<meta name="description" content="Monitoraggio bandi e reti di ricerca su migrazione e lavoro in agricoltura">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1E2A20">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3F4EC;
+    --surface:#FFFFFF;
+    --surface-alt:#E8EAE0;
+    --ink:#1E2A20;
+    --ink-muted:#57614F;
+    --accent:#B0741A;
+    --accent-soft:#EFE2C7;
+    --accent2:#3B5A6B;
+    --accent2-soft:#DCE7EA;
+    --line:#D7D9CB;
+    --good:#3E7D48;
+    --good-soft:#DFEEE0;
+    --warn:#B0741A;
+    --warn-soft:#F5E7CE;
+    --closed:#8A8B7E;
+    --closed-soft:#E7E7DE;
+    --shadow: 0 1px 2px rgba(30,42,32,0.06), 0 6px 20px -8px rgba(30,42,32,0.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12160F; --surface:#1A1F17; --surface-alt:#222820; --ink:#ECEFE4; --ink-muted:#A7AD99;
+      --accent:#DDA23F; --accent-soft:#3B3115; --accent2:#86ACBE; --accent2-soft:#1C2E35;
+      --line:#333A2B; --good:#72BE7C; --good-soft:#1D3320; --warn:#DDA23F; --warn-soft:#3B3115;
+      --closed:#8B8C7F; --closed-soft:#282A20; --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -8px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12160F; --surface:#1A1F17; --surface-alt:#222820; --ink:#ECEFE4; --ink-muted:#A7AD99;
+    --accent:#DDA23F; --accent-soft:#3B3115; --accent2:#86ACBE; --accent2-soft:#1C2E35;
+    --line:#333A2B; --good:#72BE7C; --good-soft:#1D3320; --warn:#DDA23F; --warn-soft:#3B3115;
+    --closed:#8B8C7F; --closed-soft:#282A20; --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -8px rgba(0,0,0,0.5);
+  }
+  *{box-sizing:border-box;}
+  html,body{background:var(--bg);}
+  body{
+    margin:0; color:var(--ink); font-family:"IBM Plex Sans", system-ui, sans-serif;
+    padding:0 20px; padding-bottom:env(safe-area-inset-bottom);
+  }
+  .wrap{ max-width:920px; margin:0 auto; padding-block:32px 64px; }
+  .eyebrow{
+    font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:12px; letter-spacing:0.12em;
+    text-transform:uppercase; color:var(--accent2); margin:0 0 10px;
+  }
+  h1{
+    font-family:"Source Serif 4", Georgia, serif; font-weight:700; font-size:clamp(26px,7vw,38px);
+    line-height:1.1; margin:0 0 12px; text-wrap:balance;
+  }
+  .lede{ font-size:15.5px; line-height:1.55; color:var(--ink-muted); max-width:62ch; margin:0 0 20px; }
+  .scan-line{
+    display:flex; flex-wrap:wrap; gap:8px 18px; font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:12.5px; color:var(--ink-muted); border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    padding-block:10px; margin-bottom:24px;
+  }
+  .scan-line strong{color:var(--ink); font-weight:500;}
+  .banner{
+    display:none; background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn);
+    border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:20px;
+  }
+  .banner.show{display:block;}
+  details.settings{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  details.settings summary{
+    cursor:pointer; list-style:none; padding:14px 18px; font-weight:600; font-size:14.5px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  details.settings summary::-webkit-details-marker{display:none;}
+  .summary-arrow{ font-family:"IBM Plex Mono", monospace; color:var(--ink-muted); transition:transform .15s ease; font-size:12px; }
+  details[open] .summary-arrow{transform:rotate(90deg);}
+  .settings-body{ padding:2px 18px 20px; border-top:1px solid var(--line); }
+  .field{margin-top:16px;}
+  .field label{
+    display:block; font-size:12.5px; font-weight:600; color:var(--ink-muted); margin-bottom:6px;
+    text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .field textarea, .field select{
+    width:100%; font-family:"IBM Plex Sans", sans-serif; font-size:14.5px; color:var(--ink);
+    background:var(--surface-alt); border:1px solid var(--line); border-radius:7px; padding:9px 11px;
+  }
+  .field textarea{min-height:64px; resize:vertical; line-height:1.4;}
+  .field-help{font-size:12px; color:var(--ink-muted); margin-top:5px;}
+  .settings-actions{ display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:18px; }
+  button.save, button.refresh{
+    font-family:"IBM Plex Sans", sans-serif; font-weight:600; font-size:14px; border:none; border-radius:7px;
+    padding:9px 18px; cursor:pointer;
+  }
+  button.save{ color:#fff; background:var(--accent2); }
+  button.refresh{ color:var(--accent); background:var(--accent-soft); }
+  button.save:hover, button.refresh:hover{filter:brightness(1.06);}
+  button:disabled{opacity:0.6; cursor:default;}
+  button:focus-visible, summary:focus-visible, a:focus-visible{outline:2px solid var(--accent2); outline-offset:2px;}
+  .save-msg{font-size:13px; color:var(--good);}
+  .refresh-row{ display:flex; align-items:center; gap:12px; margin:0 0 30px; }
+  .columns{ display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+  @media (max-width:680px){ .columns{grid-template-columns:1fr;} }
+  .col h2{ font-family:"Source Serif 4", Georgia, serif; font-size:19px; font-weight:600; margin:0 0 4px; }
+  .col .col-sub{ font-size:12.5px; color:var(--ink-muted); margin:0 0 14px; }
+  .stack{display:flex; flex-direction:column; gap:14px;}
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 17px 15px; box-shadow:var(--shadow); }
+  .card-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-family:"IBM Plex Mono", monospace; font-size:11px;
+    font-weight:500; letter-spacing:0.02em; padding:3px 8px 3px 7px; border-radius:99px; white-space:nowrap;
+  }
+  .pill .dot{width:6px; height:6px; border-radius:50%;}
+  .pill.open{background:var(--good-soft); color:var(--good);} .pill.open .dot{background:var(--good);}
+  .pill.closing{background:var(--warn-soft); color:var(--warn);} .pill.closing .dot{background:var(--warn);}
+  .pill.closed{background:var(--closed-soft); color:var(--closed);} .pill.closed .dot{background:var(--closed);}
+  .pill.rolling{background:var(--accent2-soft); color:var(--accent2);} .pill.rolling .dot{background:var(--accent2);}
+  .pill.watch{background:var(--accent-soft); color:var(--accent);} .pill.watch .dot{background:var(--accent);}
+  .card h3{ font-family:"Source Serif 4", Georgia, serif; font-size:16.5px; font-weight:600; line-height:1.3; margin:0 0 4px; }
+  .card .funder{ font-size:13px; color:var(--ink-muted); margin:0 0 8px; }
+  .card .summary{ font-size:13.5px; line-height:1.5; color:var(--ink); margin:0 0 10px; }
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:6px 14px; font-family:"IBM Plex Mono", monospace; font-size:12px;
+    color:var(--ink-muted); margin-bottom:10px; font-variant-numeric:tabular-nums;
+  }
+  .meta-row b{color:var(--ink); font-weight:500;}
+  .tags{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;}
+  .tag{ font-size:11px; background:var(--surface-alt); color:var(--ink-muted); padding:3px 8px; border-radius:5px; }
+  .card a.go{ font-size:13px; font-weight:600; color:var(--accent2); text-decoration:none; border-bottom:1px solid transparent; }
+  .card a.go:hover{border-bottom-color:var(--accent2);}
+  .empty, .loading{
+    font-size:13.5px; color:var(--ink-muted); padding:18px; border:1px dashed var(--line); border-radius:10px; background:var(--surface);
+  }
+  footer{ margin-top:44px; padding-top:18px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink-muted); line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Monitor bandi &amp; reti di ricerca</p>
+  <h1>AgriMigra Watch</h1>
+  <p class="lede">Bandi di finanziamento e collaborazioni di rete su migrazione e lavoro in agricoltura, raccolti automaticamente per il progetto di ricerca con Eurac.</p>
+  <div class="scan-line">
+    <span>Ultima scansione: <strong id="lastRun">—</strong></span>
+    <span>Frequenza: <strong id="freqLabel">—</strong></span>
+    <span><strong id="callCount">—</strong> bandi monitorati</span>
+  </div>
+
+  <div class="banner" id="offlineBanner">Impossibile contattare il database in questo momento. Controlla la connessione e ricarica la pagina.</div>
+
+  <details class="settings" id="settingsPanel">
+    <summary>Impostazioni ricerca <span class="summary-arrow">▸</span></summary>
+    <div class="settings-body">
+      <div class="field">
+        <label for="kwInput">Parole chiave (separate da virgola)</label>
+        <textarea id="kwInput" spellcheck="false"></textarea>
+        <p class="field-help">Usate dalla scansione automatica per orientare la ricerca: nomi di programmi, temi, aree geografiche.</p>
+      </div>
+      <div class="field">
+        <label for="freqInput">Frequenza di scansione</label>
+        <select id="freqInput">
+          <option value="weekly">Settimanale</option>
+          <option value="biweekly">Ogni due settimane</option>
+          <option value="monthly">Mensile</option>
+        </select>
+      </div>
+      <div class="settings-actions">
+        <button class="save" id="saveBtn" type="button">Salva impostazioni</button>
+        <span class="save-msg" id="saveMsg"></span>
+      </div>
+    </div>
+  </details>
+
+  <div class="refresh-row">
+    <button class="refresh" id="refreshBtn" type="button">Aggiorna vista</button>
+    <span class="save-msg" id="refreshMsg"></span>
+  </div>
+
+  <div class="columns">
+    <div class="col">
+      <h2>Bandi di finanziamento</h2>
+      <p class="col-sub">Fondi UE, nazionali e provinciali per progetti di ricerca</p>
+      <div class="stack" id="fundingStack"><div class="loading">Caricamento…</div></div>
+    </div>
+    <div class="col">
+      <h2>Reti e collaborazioni</h2>
+      <p class="col-sub">Azioni COST, reti accademiche, meccanismi di partenariato</p>
+      <div class="stack" id="networkStack"><div class="loading">Caricamento…</div></div>
+    </div>
+  </div>
+
+  <footer>
+    Questa app si aggiorna da sola: uno scraper gratuito (via GitHub Actions) controlla periodicamente alcune fonti pubbliche (Horizon Europe, MUR/PRIN, COST, Provincia di Bolzano, agenzie DACH, IMISCOE) in base alle parole chiave e alla frequenza impostate sopra. Non usa intelligenza artificiale: alcune voci sono segnalazioni "da verificare" (pagina cambiata o parola chiave trovata) più che elenchi già filtrati con giudizio — controllate sempre scadenze e requisiti sulla fonte ufficiale.
+  </footer>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+(function(){
+  var FREQ_LABELS = {weekly:"Settimanale", biweekly:"Ogni due settimane", monthly:"Mensile"};
+  var STATUS_LABELS = {open:"Aperto", closing:"In chiusura", closed:"Chiuso", rolling:"Continuo", watch:"Da verificare"};
+
+  function fmtDate(iso){
+    if(!iso) return "—";
+    try{ var d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("it-IT", {day:"numeric", month:"short", year:"numeric"}); }
+    catch(e){ return iso; }
+  }
+  function fmtDateTime(iso){
+    if(!iso) return "—";
+    try{
+      var d = new Date(iso);
+      return d.toLocaleDateString("it-IT", {day:"numeric", month:"short", year:"numeric"}) + " · " +
+             d.toLocaleTimeString("it-IT", {hour:"2-digit", minute:"2-digit"});
+    }catch(e){ return iso; }
+  }
+  function daysUntil(iso){
+    if(!iso) return null;
+    var d = new Date(iso + "T00:00:00"); var now = new Date(); now.setHours(0,0,0,0);
+    return Math.round((d - now) / 86400000);
+  }
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function renderCard(call){
+    var status = call.status || "rolling";
+    var days = daysUntil(call.deadlineDate);
+    var deadlineText = call.deadlineDate ? fmtDate(call.deadlineDate) : (call.deadlineText || "continuo / senza scadenza fissa");
+    var daysNote = "";
+    if(status !== "closed" && days != null){
+      if(days > 0) daysNote = " (tra " + days + " g.)";
+      else if(days === 0) daysNote = " (oggi)";
+    }
+    var tags = (call.tags || []).map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join("");
+    var amountRow = call.amount ? '<span>Importo: <b>' + escapeHtml(call.amount) + '</b></span>' : "";
+    return '' +
+      '<div class="card">' +
+        '<div class="card-top">' +
+          '<h3>' + escapeHtml(call.title || "Senza titolo") + '</h3>' +
+          '<span class="pill ' + status + '"><span class="dot"></span>' + (STATUS_LABELS[status] || status) + '</span>' +
+        '</div>' +
+        '<p class="funder">' + escapeHtml(call.funder || "") + '</p>' +
+        (call.summary ? '<p class="summary">' + escapeHtml(call.summary) + '</p>' : '') +
+        '<div class="meta-row">' +
+          '<span>Scadenza: <b>' + escapeHtml(deadlineText) + daysNote + '</b></span>' +
+          amountRow +
+        '</div>' +
+        (tags ? '<div class="tags">' + tags + '</div>' : '') +
+        (call.url ? '<a class="go" href="' + escapeHtml(call.url) + '" target="_blank" rel="noopener">Vedi il bando →</a>' : '') +
+      '</div>';
+  }
+
+  function sortCalls(list){
+    return list.slice().sort(function(a, b){
+      var order = {closing:0, open:1, watch:2, rolling:3, closed:4};
+      var oa = order[a.status] != null ? order[a.status] : 3;
+      var ob = order[b.status] != null ? order[b.status] : 3;
+      if(oa !== ob) return oa - ob;
+      var da = a.deadlineDate ? new Date(a.deadlineDate).getTime() : Infinity;
+      var db = b.deadlineDate ? new Date(b.deadlineDate).getTime() : Infinity;
+      return da - db;
+    });
+  }
+
+  function renderColumn(el, list){
+    if(!list.length){ el.innerHTML = '<div class="empty">Nessun bando trovato al momento in questa categoria.</div>'; return; }
+    el.innerHTML = sortCalls(list).map(renderCard).join("");
+  }
+
+  var app, db;
+  try{
+    app = firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.firestore();
+  }catch(e){
+    document.getElementById("offlineBanner").classList.add("show");
+    document.getElementById("offlineBanner").textContent = "Configurazione Firebase mancante o non valida: apri public/firebase-config.js e inserisci i dati del tuo progetto (vedi SETUP.md).";
+  }
+
+  var kwInput = document.getElementById("kwInput");
+  var freqInput = document.getElementById("freqInput");
+  var saveBtn = document.getElementById("saveBtn");
+  var saveMsg = document.getElementById("saveMsg");
+  var refreshBtn = document.getElementById("refreshBtn");
+  var refreshMsg = document.getElementById("refreshMsg");
+  var offlineBanner = document.getElementById("offlineBanner");
+
+  function loadConfig(){
+    if(!db) return;
+    db.collection("config").doc("main").get().then(function(snap){
+      var data = snap.exists ? snap.data() : {};
+      kwInput.value = (data.keywords || []).join(", ");
+      var freq = data.frequency || "biweekly";
+      freqInput.value = freq;
+      document.getElementById("freqLabel").textContent = FREQ_LABELS[freq] || freq;
+    }).catch(function(){ offlineBanner.classList.add("show"); });
+  }
+
+  function loadMeta(){
+    if(!db) return;
+    db.collection("meta").doc("status").get().then(function(snap){
+      var data = snap.exists ? snap.data() : {};
+      document.getElementById("lastRun").textContent = data.lastRun ? fmtDateTime(data.lastRun) : "non ancora eseguita";
+    }).catch(function(){ offlineBanner.classList.add("show"); });
+  }
+
+  function loadCalls(){
+    if(!db) return;
+    db.collection("calls").get().then(function(qs){
+      var funding = [], network = [];
+      document.getElementById("callCount").textContent = qs.size;
+      qs.forEach(function(doc){
+        var c = doc.data();
+        if(!c) return;
+        if(c.category === "network") network.push(c); else funding.push(c);
+      });
+      renderColumn(document.getElementById("fundingStack"), funding);
+      renderColumn(document.getElementById("networkStack"), network);
+    }).catch(function(){
+      document.getElementById("fundingStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
+      document.getElementById("networkStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
+      offlineBanner.classList.add("show");
+    });
+  }
+
+  function loadAll(){ loadConfig(); loadMeta(); loadCalls(); }
+  loadAll();
+
+  if(saveBtn){
+    saveBtn.addEventListener("click", function(){
+      if(!db) return;
+      var keywords = kwInput.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+      var frequency = freqInput.value;
+      saveBtn.disabled = true; saveMsg.textContent = "Salvataggio…";
+      db.collection("config").doc("main").set({
+        keywords: keywords, frequency: frequency, updatedAt: new Date().toISOString()
+      }).then(function(){
+        saveMsg.textContent = "Impostazioni salvate — verranno usate dalla prossima scansione automatica.";
+        document.getElementById("freqLabel").textContent = FREQ_LABELS[frequency] || frequency;
+        saveBtn.disabled = false;
+        setTimeout(function(){ saveMsg.textContent = ""; }, 5000);
+      }).catch(function(){
+        saveMsg.textContent = "Errore nel salvataggio, riprova.";
+        saveBtn.disabled = false;
+      });
+    });
+  }
+
+  if(refreshBtn){
+    refreshBtn.addEventListener("click", function(){
+      refreshBtn.disabled = true; refreshMsg.textContent = "Ricarico…";
+      loadAll();
+      setTimeout(function(){
+        refreshBtn.disabled = false;
+        refreshMsg.textContent = "Vista aggiornata con gli ultimi dati disponibili.";
+        setTimeout(function(){ refreshMsg.textContent = ""; }, 4000);
+      }, 500);
+    });
+  }
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("service-worker.js").catch(function(){});
+    });
+  }
+})();
+</script>
+</body>
+</html>
