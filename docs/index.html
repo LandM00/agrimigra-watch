@@ -96,6 +96,21 @@
   .field textarea{min-height:64px; resize:vertical; line-height:1.4;}
   .field textarea::placeholder{color:var(--ink-muted); opacity:1;}
   .field-help{font-size:12px; color:var(--ink-muted); margin-top:5px;}
+  .sources-list{ border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .source-row{
+    display:flex; align-items:center; gap:10px; padding:9px 12px; font-size:13px;
+    border-bottom:1px solid var(--line);
+  }
+  .source-row:last-child{border-bottom:none;}
+  .source-row .source-main{flex:1; min-width:0;}
+  .source-row .source-url{ display:block; color:var(--ink); text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .source-row .source-url:hover{ text-decoration:underline; }
+  .source-row .source-meta{ display:block; font-size:11.5px; color:var(--ink-muted); margin-top:2px; }
+  .source-remove{
+    flex-shrink:0; background:none; border:1px solid var(--line); border-radius:6px; color:var(--ink-muted);
+    font-size:11.5px; padding:4px 9px; cursor:pointer; font-family:"IBM Plex Sans", sans-serif;
+  }
+  .source-remove:hover{ color:var(--ink); border-color:var(--ink-muted); }
   .settings-actions{ display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:18px; }
   button.save, button.refresh{
     font-family:"IBM Plex Sans", sans-serif; font-weight:600; font-size:14px; border:none; border-radius:7px;
@@ -138,9 +153,6 @@
   .tag{ font-size:11px; background:var(--surface-alt); color:var(--ink-muted); padding:3px 8px; border-radius:5px; }
   .card a.go{ font-size:13px; font-weight:600; color:var(--accent2); text-decoration:none; border-bottom:1px solid transparent; }
   .card a.go:hover{border-bottom-color:var(--accent2);}
-  .webSection{ margin-top:34px; padding-top:22px; border-top:1px dashed var(--line); }
-  .webSection h2{ font-family:"Source Serif 4", Georgia, serif; font-size:19px; font-weight:600; margin:0 0 4px; }
-  .webSection-note{ font-size:13px; font-weight:400; color:var(--ink-muted); }
   .empty, .loading{
     font-size:13.5px; color:var(--ink-muted); padding:18px; border:1px dashed var(--line); border-radius:10px; background:var(--surface);
   }
@@ -184,7 +196,22 @@
         <button class="reset" id="resetBtn" type="button">Ricomincia da zero</button>
         <span class="save-msg" id="resetMsg"></span>
       </div>
-      <p class="field-help">Svuota tutti i bandi trovati finora (utile se cambi completamente argomento di ricerca). Non tocca parole chiave o frequenza. L'elenco delle pagine monitorate si modifica invece dalla console Firebase.</p>
+      <p class="field-help">Svuota tutti i bandi trovati finora (utile se cambi completamente argomento di ricerca). Non tocca parole chiave, frequenza o fonti monitorate.</p>
+
+      <div class="field" style="margin-top:18px;">
+        <label for="sourceInput">Aggiungi fonte/i da monitorare</label>
+        <textarea id="sourceInput" spellcheck="false" placeholder="https://esempio.it/bandi | Nome ente | bandi | Titolo breve (opzionale)"></textarea>
+        <p class="field-help">Una fonte per riga, campi separati da "|": indirizzo della pagina, nome dell'ente/finanziatore, categoria ("bandi" oppure "reti"), e un titolo breve facoltativo. Lo scraper controllerà quella pagina e segnalerà quando cambia o contiene le tue parole chiave — puoi incollarne più di una insieme.</p>
+        <div class="settings-actions">
+          <button class="save" id="addSourceBtn" type="button">Aggiungi fonte/i</button>
+          <span class="save-msg" id="sourceMsg"></span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Fonti monitorate attualmente</label>
+        <div id="sourcesList" class="sources-list"><div class="loading">Caricamento…</div></div>
+      </div>
     </div>
   </details>
 
@@ -206,14 +233,8 @@
     </div>
   </div>
 
-  <div class="webSection">
-    <h2>Trovato con ricerca web <span class="webSection-note">(da verificare)</span></h2>
-    <p class="col-sub">Risultati di una ricerca generica sul web in base alle parole chiave attuali — nessun filtro di qualità, solo un punto di partenza.</p>
-    <div class="stack" id="webStack"><div class="loading">Caricamento…</div></div>
-  </div>
-
   <footer>
-    Questa app si aggiorna da sola: uno scraper gratuito (via GitHub Actions) controlla periodicamente Horizon Europe, una ricerca generica sul web e le pagine istituzionali configurate, in base alle parole chiave e alla frequenza impostate sopra. Non usa intelligenza artificiale: alcune voci sono segnalazioni "da verificare" (pagina cambiata, parola chiave trovata, o risultato di ricerca) più che elenchi già filtrati con giudizio — controllate sempre scadenze e requisiti sulla fonte ufficiale.
+    Questa app si aggiorna da sola: uno scraper gratuito (via GitHub Actions) controlla periodicamente Horizon Europe e le pagine istituzionali che hai configurato qui sopra, in base alle parole chiave e alla frequenza impostate. Non usa intelligenza artificiale: alcune voci sono segnalazioni "da verificare" (pagina cambiata o parola chiave trovata) più che elenchi già filtrati con giudizio — controllate sempre scadenze e requisiti sulla fonte ufficiale.
   </footer>
 </div>
 
@@ -333,27 +354,108 @@
   function loadCalls(){
     if(!db) return;
     db.collection("calls").get().then(function(qs){
-      var funding = [], network = [], web = [];
+      var funding = [], network = [];
       document.getElementById("callCount").textContent = qs.size;
       qs.forEach(function(doc){
         var c = doc.data();
         if(!c) return;
         if(c.category === "network") network.push(c);
-        else if(c.category === "web") web.push(c);
         else funding.push(c);
       });
       renderColumn(document.getElementById("fundingStack"), funding);
       renderColumn(document.getElementById("networkStack"), network);
-      renderColumn(document.getElementById("webStack"), web);
     }).catch(function(){
       document.getElementById("fundingStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
       document.getElementById("networkStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
-      document.getElementById("webStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
       offlineBanner.classList.add("show");
     });
   }
 
-  function loadAll(){ loadConfig(); loadMeta(); loadCalls(); }
+  var sourcesList = document.getElementById("sourcesList");
+  var sourceInput = document.getElementById("sourceInput");
+  var addSourceBtn = document.getElementById("addSourceBtn");
+  var sourceMsg = document.getElementById("sourceMsg");
+  var CATEGORY_LABELS = {funding:"Bandi", network:"Reti"};
+
+  function parseCategory(raw){
+    var v = (raw || "").trim().toLowerCase();
+    if(v === "reti" || v === "network" || v === "collaborazioni") return "network";
+    return "funding";
+  }
+
+  function renderSourceRow(id, s){
+    return '' +
+      '<div class="source-row">' +
+        '<div class="source-main">' +
+          '<a class="source-url" href="' + escapeHtml(s.url || "") + '" target="_blank" rel="noopener">' + escapeHtml(s.url || "(nessun indirizzo)") + '</a>' +
+          '<span class="source-meta">' + escapeHtml(s.funder || "") + ' · ' + (CATEGORY_LABELS[s.category] || s.category || "bandi") + (s.title ? ' · ' + escapeHtml(s.title) : '') + '</span>' +
+        '</div>' +
+        '<button class="source-remove" type="button" data-id="' + escapeHtml(id) + '">Rimuovi</button>' +
+      '</div>';
+  }
+
+  function loadSources(){
+    if(!db || !sourcesList) return;
+    db.collection("sources").get().then(function(qs){
+      if(qs.empty){
+        sourcesList.innerHTML = '<div class="empty">Nessuna fonte configurata al momento.</div>';
+        return;
+      }
+      var rows = [];
+      qs.forEach(function(doc){ rows.push(renderSourceRow(doc.id, doc.data() || {})); });
+      sourcesList.innerHTML = rows.join("");
+    }).catch(function(){
+      sourcesList.innerHTML = '<div class="empty">Impossibile caricare le fonti in questo momento.</div>';
+    });
+  }
+
+  if(sourcesList){
+    sourcesList.addEventListener("click", function(ev){
+      var btn = ev.target.closest ? ev.target.closest(".source-remove") : null;
+      if(!btn || !db) return;
+      var id = btn.getAttribute("data-id");
+      var ok = window.confirm("Rimuovere questa fonte dal monitoraggio? Non tocca i bandi già trovati.");
+      if(!ok) return;
+      btn.disabled = true;
+      db.collection("sources").doc(id).delete().then(loadSources).catch(function(){
+        btn.disabled = false;
+        window.alert("Errore nella rimozione, riprova.");
+      });
+    });
+  }
+
+  if(addSourceBtn){
+    addSourceBtn.addEventListener("click", function(){
+      if(!db) return;
+      var lines = sourceInput.value.split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+      if(!lines.length){ sourceMsg.textContent = "Scrivi almeno una fonte prima di aggiungere."; return; }
+      var entries = lines.map(function(line){
+        var parts = line.split("|").map(function(p){ return p.trim(); });
+        return {
+          url: parts[0] || "",
+          funder: parts[1] || "",
+          category: parseCategory(parts[2]),
+          title: parts[3] || "",
+          addedAt: new Date().toISOString()
+        };
+      }).filter(function(e){ return e.url; });
+      if(!entries.length){ sourceMsg.textContent = "Nessun indirizzo valido trovato: controlla il formato (vedi il testo di aiuto)."; return; }
+      addSourceBtn.disabled = true; sourceMsg.textContent = "Aggiunta in corso…";
+      Promise.all(entries.map(function(e){ return db.collection("sources").add(e); }))
+        .then(function(){
+          sourceMsg.textContent = "Aggiunte " + entries.length + " fonte/i.";
+          sourceInput.value = "";
+          addSourceBtn.disabled = false;
+          loadSources();
+          setTimeout(function(){ sourceMsg.textContent = ""; }, 5000);
+        }).catch(function(){
+          sourceMsg.textContent = "Errore nel salvataggio, riprova.";
+          addSourceBtn.disabled = false;
+        });
+    });
+  }
+
+  function loadAll(){ loadConfig(); loadMeta(); loadCalls(); loadSources(); }
   loadAll();
 
   if(saveBtn){

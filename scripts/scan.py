@@ -13,11 +13,9 @@ Gira su GitHub Actions secondo lo schedule in .github/workflows/scan.yml
      il workflow spesso (per reagire in fretta a un cambio di impostazioni)
      senza sprecare tempo a fare scraping ad ogni esecuzione.
   3. Se è il momento: prova a interrogare l'API pubblica del portale
-     Funding & Tenders (Horizon Europe), fa una ricerca generica sul web
-     con Google Programmable Search (se configurata) usando le parole
-     chiave correnti, e controlla un elenco di pagine istituzionali
-     (configurabile in Firestore, collection "sources") cercando le
-     parole chiave o un cambiamento di contenuto.
+     Funding & Tenders (Horizon Europe) e controlla un elenco di pagine
+     istituzionali (configurabile in Firestore, collection "sources")
+     cercando le parole chiave o un cambiamento di contenuto.
   4. Scrive/aggiorna i risultati nella collection "calls" di Firestore,
      e aggiorna meta/status.
 
@@ -25,17 +23,20 @@ Non usa nessun modello linguistico: è ricerca per parola chiave e
 rilevamento di cambiamenti di pagina, non un giudizio "intelligente" di
 rilevanza. Le voci di tipo "watch" vanno sempre verificate a mano.
 
-L'elenco delle pagine istituzionali da controllare NON è più fisso nel
+L'elenco delle pagine istituzionali da controllare NON è fisso nel
 codice: vive nella collection Firestore "sources" (ognuna: url, funder,
 category, title). La prima esecuzione la popola con un elenco di default
 (vedi DEFAULT_SOURCES) se è vuota; da lì si può aggiungere/togliere/
-modificare fonti direttamente dalla console Firebase (Firestore Database
-→ Dati → collection "sources"), senza toccare il codice — utile se un
-giorno si vuole riorientare l'app su un altro argomento di ricerca.
+modificare fonti direttamente dall'app (pannello "Impostazioni ricerca"
+→ "Fonti monitorate"), senza toccare il codice — utile se un giorno si
+vuole riorientare l'app su un altro argomento di ricerca.
 
-La ricerca generica sul web (Google Programmable Search) è opzionale:
-se le variabili d'ambiente GOOGLE_SEARCH_API_KEY e GOOGLE_SEARCH_ENGINE_ID
-non sono impostate, questo passo viene semplicemente saltato.
+Nota: questo script usava anche la Custom Search JSON API di Google per
+una ricerca generica sul web, rimossa a settembre 2026 perché Google ha
+chiuso quell'API ai nuovi clienti (resta disponibile solo a chi la usava
+già prima, fino al 1 gennaio 2027). Al suo posto si aggiungono le fonti
+di interesse una per una nella collection "sources", con lo stesso
+meccanismo di controllo pagine usato per le fonti istituzionali.
 """
 
 import hashlib
@@ -66,9 +67,6 @@ HTTP_HEADERS = {
     "User-Agent": "GrantScout/1.0 (+strumento privato di monitoraggio bandi; uso non commerciale)"
 }
 HTTP_TIMEOUT = 20
-GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY")
-GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
-GOOGLE_SEARCH_MAX_RESULTS = 8  # per restare ben dentro le 100 ricerche/giorno gratuite
 
 # Elenco di default delle pagine istituzionali da controllare, usato SOLO
 # per popolare la collection Firestore "sources" la prima volta (se vuota).
@@ -350,52 +348,6 @@ def _parse_date(value):
     return m.group(1) if m else None
 
 
-def search_google_custom(keywords):
-    """Ricerca generica sul web tramite Google Programmable Search
-    (Custom Search JSON API) — piano gratuito, 100 ricerche/giorno.
-    Se le credenziali non sono configurate, salta silenziosamente: questo
-    passo è opzionale, il resto dello scan funziona comunque senza."""
-    if not GOOGLE_SEARCH_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
-        return []
-    if not keywords:
-        return []
-    query = " ".join(keywords[:6]) + " bando OR call OR grant OR finanziamento"
-    results = []
-    try:
-        resp = requests.get(
-            "https://www.googleapis.com/customsearch/v1",
-            params={
-                "key": GOOGLE_SEARCH_API_KEY,
-                "cx": GOOGLE_SEARCH_ENGINE_ID,
-                "q": query,
-                "num": GOOGLE_SEARCH_MAX_RESULTS,
-            },
-            timeout=HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        for item in data.get("items", []):
-            link = item.get("link")
-            if not link:
-                continue
-            domain = re.sub(r"^https?://(www\.)?", "", link).split("/")[0]
-            results.append({
-                "id": "web-" + slugify(domain + "-" + (item.get("title") or "")),
-                "title": item.get("title") or "Risultato di ricerca",
-                "funder": domain,
-                "category": "web",
-                "status": "watch",
-                "deadlineText": "vedi pagina",
-                "tags": ["ricerca web"],
-                "summary": item.get("snippet") or "Trovato con una ricerca generica sul web in base alle parole chiave attuali — verificare rilevanza sulla pagina originale.",
-                "url": link,
-                "source": "google-custom-search",
-            })
-    except Exception as exc:  # noqa: BLE001
-        print("Avviso: ricerca web generica non riuscita ({}). Salto.".format(exc))
-    return results
-
-
 def check_watch_pages(keywords, previous_hashes, sources):
     """Per ogni pagina in 'sources' (da Firestore): scarica il testo,
     controlla se contiene una delle parole chiave e se il contenuto è
@@ -504,11 +456,6 @@ def main():
     horizon_items = search_funding_tenders_portal(keywords)
     sources_checked.append("Horizon Europe / Funding & Tenders Portal ({} risultati)".format(len(horizon_items)))
     all_new_items.extend(horizon_items)
-
-    web_items = search_google_custom(keywords)
-    if GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
-        sources_checked.append("Ricerca web generica (Google Custom Search): {} risultati".format(len(web_items)))
-    all_new_items.extend(web_items)
 
     watch_items, new_hashes = check_watch_pages(keywords, previous_hashes, sources)
     sources_checked.append("Pagine monitorate (configurabili in Firestore): {} segnalazioni su {}".format(len(watch_items), len(sources)))

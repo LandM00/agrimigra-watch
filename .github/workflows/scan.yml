@@ -27,9 +27,4 @@ jobs:
       - name: Esegui lo scraper
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          # Le due variabili qui sotto sono opzionali: se non le imposti
-          # come secret del repository, la ricerca generica sul web viene
-          # semplicemente saltata (il resto continua a funzionare).
-          GOOGLE_SEARCH_API_KEY: ${{ secrets.GOOGLE_SEARCH_API_KEY }}
-          GOOGLE_SEARCH_ENGINE_ID: ${{ secrets.GOOGLE_SEARCH_ENGINE_ID }}
         run: python scripts/scan.py
