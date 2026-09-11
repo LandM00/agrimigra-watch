@@ -1,7 +1,7 @@
 {
-  "name": "AgriMigra Watch",
-  "short_name": "AgriMigra",
-  "description": "Monitoraggio bandi e reti di ricerca su migrazione e lavoro in agricoltura",
+  "name": "GrantScout",
+  "short_name": "GrantScout",
+  "description": "Monitoraggio bandi e reti di ricerca in base alle parole chiave che imposti",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

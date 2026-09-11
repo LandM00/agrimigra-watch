@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scraper periodico per AgriMigra Watch.
+Scraper periodico per GrantScout.
 
 Gira su GitHub Actions secondo lo schedule in .github/workflows/scan.yml
 (di default ogni 6 ore). Ad ogni esecuzione:
@@ -13,15 +13,29 @@ Gira su GitHub Actions secondo lo schedule in .github/workflows/scan.yml
      il workflow spesso (per reagire in fretta a un cambio di impostazioni)
      senza sprecare tempo a fare scraping ad ogni esecuzione.
   3. Se è il momento: prova a interrogare l'API pubblica del portale
-     Funding & Tenders (Horizon Europe) e controlla un elenco di pagine
-     istituzionali note (COST, MUR/PRIN, Alto Adige, ecc.) cercando le
-     parole chiave configurate o un cambiamento di contenuto.
+     Funding & Tenders (Horizon Europe), fa una ricerca generica sul web
+     con Google Programmable Search (se configurata) usando le parole
+     chiave correnti, e controlla un elenco di pagine istituzionali
+     (configurabile in Firestore, collection "sources") cercando le
+     parole chiave o un cambiamento di contenuto.
   4. Scrive/aggiorna i risultati nella collection "calls" di Firestore,
      e aggiorna meta/status.
 
 Non usa nessun modello linguistico: è ricerca per parola chiave e
 rilevamento di cambiamenti di pagina, non un giudizio "intelligente" di
 rilevanza. Le voci di tipo "watch" vanno sempre verificate a mano.
+
+L'elenco delle pagine istituzionali da controllare NON è più fisso nel
+codice: vive nella collection Firestore "sources" (ognuna: url, funder,
+category, title). La prima esecuzione la popola con un elenco di default
+(vedi DEFAULT_SOURCES) se è vuota; da lì si può aggiungere/togliere/
+modificare fonti direttamente dalla console Firebase (Firestore Database
+→ Dati → collection "sources"), senza toccare il codice — utile se un
+giorno si vuole riorientare l'app su un altro argomento di ricerca.
+
+La ricerca generica sul web (Google Programmable Search) è opzionale:
+se le variabili d'ambiente GOOGLE_SEARCH_API_KEY e GOOGLE_SEARCH_ENGINE_ID
+non sono impostate, questo passo viene semplicemente saltato.
 """
 
 import hashlib
@@ -49,13 +63,17 @@ except ImportError:
 FREQ_DAYS = {"weekly": 7, "biweekly": 14, "monthly": 30}
 DEFAULT_FREQUENCY = "biweekly"
 HTTP_HEADERS = {
-    "User-Agent": "AgriMigraWatch/1.0 (+strumento privato di monitoraggio bandi; uso non commerciale)"
+    "User-Agent": "GrantScout/1.0 (+strumento privato di monitoraggio bandi; uso non commerciale)"
 }
 HTTP_TIMEOUT = 20
+GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY")
+GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
+GOOGLE_SEARCH_MAX_RESULTS = 8  # per restare ben dentro le 100 ricerche/giorno gratuite
 
-# Pagine istituzionali da controllare quando non esiste un'API pubblica.
-# Per ognuna: un id stabile, la fonte "leggibile", l'URL e la categoria.
-WATCH_PAGES = [
+# Elenco di default delle pagine istituzionali da controllare, usato SOLO
+# per popolare la collection Firestore "sources" la prima volta (se vuota).
+# Da lì in poi l'elenco effettivo si modifica in Firestore, non qui.
+DEFAULT_SOURCES = [
     {
         "id": "cost-open-call",
         "funder": "COST Association",
@@ -197,6 +215,59 @@ def should_run(config, meta):
     return False, "non ancora ({:.1f}/{} giorni)".format(elapsed_days, threshold_days)
 
 
+def seed_sources_if_empty(db):
+    """Popola la collection 'sources' con l'elenco di default SOLO se è
+    vuota — da quel momento in poi l'elenco vero vive in Firestore e può
+    essere modificato dalla console Firebase senza toccare il codice."""
+    existing = list(db.collection("sources").limit(1).stream())
+    if existing:
+        return
+    batch = db.batch()
+    for page in DEFAULT_SOURCES:
+        doc_id = page["id"]
+        data = {k: v for k, v in page.items() if k != "id"}
+        batch.set(db.collection("sources").document(doc_id), data)
+    batch.commit()
+    print("Elenco fonti di default inserito in Firestore ({} pagine).".format(len(DEFAULT_SOURCES)))
+
+
+def load_sources(db):
+    docs = db.collection("sources").stream()
+    sources = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        data["id"] = doc.id
+        if data.get("url"):
+            sources.append(data)
+    return sources
+
+
+def check_and_apply_reset(db):
+    """Il pulsante 'Ricomincia da zero' nell'app scrive admin/reset con
+    requested=true. Qui lo leggiamo e, se richiesto, svuotiamo la
+    collection 'calls' (non le fonti né le impostazioni)."""
+    snap = db.collection("admin").document("reset").get()
+    if not snap.exists:
+        return False
+    data = snap.to_dict() or {}
+    if not data.get("requested"):
+        return False
+    docs = list(db.collection("calls").stream())
+    batch = db.batch()
+    for i, doc in enumerate(docs):
+        batch.delete(doc.reference)
+        if (i + 1) % 400 == 0:
+            batch.commit()
+            batch = db.batch()
+    batch.commit()
+    db.collection("admin").document("reset").set({
+        "requested": False,
+        "lastResetAt": now_iso(),
+    })
+    print("Reset richiesto dall'app: eliminati {} bandi.".format(len(docs)))
+    return True
+
+
 def seed_if_empty(db):
     existing = list(db.collection("calls").limit(1).stream())
     if existing:
@@ -279,14 +350,60 @@ def _parse_date(value):
     return m.group(1) if m else None
 
 
-def check_watch_pages(keywords, previous_hashes):
-    """Per ogni pagina istituzionale nota: scarica il testo, controlla se
-    contiene una delle parole chiave e se il contenuto è cambiato rispetto
-    all'ultima esecuzione. Non "capisce" il contenuto: segnala solo dove
-    guardare a mano."""
+def search_google_custom(keywords):
+    """Ricerca generica sul web tramite Google Programmable Search
+    (Custom Search JSON API) — piano gratuito, 100 ricerche/giorno.
+    Se le credenziali non sono configurate, salta silenziosamente: questo
+    passo è opzionale, il resto dello scan funziona comunque senza."""
+    if not GOOGLE_SEARCH_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
+        return []
+    if not keywords:
+        return []
+    query = " ".join(keywords[:6]) + " bando OR call OR grant OR finanziamento"
+    results = []
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "key": GOOGLE_SEARCH_API_KEY,
+                "cx": GOOGLE_SEARCH_ENGINE_ID,
+                "q": query,
+                "num": GOOGLE_SEARCH_MAX_RESULTS,
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("items", []):
+            link = item.get("link")
+            if not link:
+                continue
+            domain = re.sub(r"^https?://(www\.)?", "", link).split("/")[0]
+            results.append({
+                "id": "web-" + slugify(domain + "-" + (item.get("title") or "")),
+                "title": item.get("title") or "Risultato di ricerca",
+                "funder": domain,
+                "category": "web",
+                "status": "watch",
+                "deadlineText": "vedi pagina",
+                "tags": ["ricerca web"],
+                "summary": item.get("snippet") or "Trovato con una ricerca generica sul web in base alle parole chiave attuali — verificare rilevanza sulla pagina originale.",
+                "url": link,
+                "source": "google-custom-search",
+            })
+    except Exception as exc:  # noqa: BLE001
+        print("Avviso: ricerca web generica non riuscita ({}). Salto.".format(exc))
+    return results
+
+
+def check_watch_pages(keywords, previous_hashes, sources):
+    """Per ogni pagina in 'sources' (da Firestore): scarica il testo,
+    controlla se contiene una delle parole chiave e se il contenuto è
+    cambiato rispetto all'ultima esecuzione. Non "capisce" il contenuto:
+    segnala solo dove guardare a mano."""
     results = []
     new_hashes = dict(previous_hashes)
-    for page in WATCH_PAGES:
+    for page in sources:
         try:
             resp = requests.get(page["url"], headers=HTTP_HEADERS, timeout=HTTP_TIMEOUT)
             resp.raise_for_status()
@@ -362,11 +479,17 @@ def main():
     config = get_doc(db, "config", "main", default={"keywords": [], "frequency": DEFAULT_FREQUENCY})
     meta = get_doc(db, "meta", "status", default={})
 
-    seeded = seed_if_empty(db)
+    seed_sources_if_empty(db)
+    sources = load_sources(db)
+
+    was_reset = check_and_apply_reset(db)
+    seeded = seed_if_empty(db) if not was_reset else False
+    # Dopo un reset non re-inseriamo i bandi seme: l'utente ha chiesto
+    # esplicitamente di ripartire da zero per un nuovo argomento.
 
     run_due, reason = should_run(config, meta)
     print("Verifica frequenza: {}".format(reason))
-    if not run_due and not seeded:
+    if not run_due and not seeded and not was_reset:
         print("Non è ancora il momento di eseguire la scansione. Fine.")
         return
 
@@ -382,8 +505,13 @@ def main():
     sources_checked.append("Horizon Europe / Funding & Tenders Portal ({} risultati)".format(len(horizon_items)))
     all_new_items.extend(horizon_items)
 
-    watch_items, new_hashes = check_watch_pages(keywords, previous_hashes)
-    sources_checked.append("Pagine istituzionali monitorate: {} segnalazioni su {}".format(len(watch_items), len(WATCH_PAGES)))
+    web_items = search_google_custom(keywords)
+    if GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        sources_checked.append("Ricerca web generica (Google Custom Search): {} risultati".format(len(web_items)))
+    all_new_items.extend(web_items)
+
+    watch_items, new_hashes = check_watch_pages(keywords, previous_hashes, sources)
+    sources_checked.append("Pagine monitorate (configurabili in Firestore): {} segnalazioni su {}".format(len(watch_items), len(sources)))
     all_new_items.extend(watch_items)
 
     closed_count = close_expired_calls(db)

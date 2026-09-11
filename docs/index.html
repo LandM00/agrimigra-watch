@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AgriMigra Watch</title>
-<meta name="description" content="Monitoraggio bandi e reti di ricerca su migrazione e lavoro in agricoltura">
+<title>GrantScout</title>
+<meta name="description" content="Monitoraggio bandi e reti di ricerca in base alle parole chiave che imposti">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1E2A20">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -102,7 +102,8 @@
   }
   button.save{ color:#fff; background:var(--accent2); }
   button.refresh{ color:var(--accent); background:var(--accent-soft); }
-  button.save:hover, button.refresh:hover{filter:brightness(1.06);}
+  button.reset{ color:var(--closed); background:var(--closed-soft); }
+  button.save:hover, button.refresh:hover, button.reset:hover{filter:brightness(1.06);}
   button:disabled{opacity:0.6; cursor:default;}
   button:focus-visible, summary:focus-visible, a:focus-visible{outline:2px solid var(--accent2); outline-offset:2px;}
   .save-msg{font-size:13px; color:var(--good);}
@@ -136,6 +137,9 @@
   .tag{ font-size:11px; background:var(--surface-alt); color:var(--ink-muted); padding:3px 8px; border-radius:5px; }
   .card a.go{ font-size:13px; font-weight:600; color:var(--accent2); text-decoration:none; border-bottom:1px solid transparent; }
   .card a.go:hover{border-bottom-color:var(--accent2);}
+  .webSection{ margin-top:34px; padding-top:22px; border-top:1px dashed var(--line); }
+  .webSection h2{ font-family:"Source Serif 4", Georgia, serif; font-size:19px; font-weight:600; margin:0 0 4px; }
+  .webSection-note{ font-size:13px; font-weight:400; color:var(--ink-muted); }
   .empty, .loading{
     font-size:13.5px; color:var(--ink-muted); padding:18px; border:1px dashed var(--line); border-radius:10px; background:var(--surface);
   }
@@ -145,8 +149,8 @@
 <body>
 <div class="wrap">
   <p class="eyebrow">Monitor bandi &amp; reti di ricerca</p>
-  <h1>AgriMigra Watch</h1>
-  <p class="lede">Bandi di finanziamento e collaborazioni di rete su migrazione e lavoro in agricoltura, raccolti automaticamente per il progetto di ricerca con Eurac.</p>
+  <h1>GrantScout</h1>
+  <p class="lede">Bandi di finanziamento e collaborazioni di rete raccolti automaticamente in base alle parole chiave che imposti qui sotto.</p>
   <div class="scan-line">
     <span>Ultima scansione: <strong id="lastRun">—</strong></span>
     <span>Frequenza: <strong id="freqLabel">—</strong></span>
@@ -175,6 +179,11 @@
         <button class="save" id="saveBtn" type="button">Salva impostazioni</button>
         <span class="save-msg" id="saveMsg"></span>
       </div>
+      <div class="settings-actions" style="margin-top:8px;">
+        <button class="reset" id="resetBtn" type="button">Ricomincia da zero</button>
+        <span class="save-msg" id="resetMsg"></span>
+      </div>
+      <p class="field-help">Svuota tutti i bandi trovati finora (utile se cambi completamente argomento di ricerca). Non tocca parole chiave o frequenza. L'elenco delle pagine monitorate si modifica invece dalla console Firebase.</p>
     </div>
   </details>
 
@@ -196,8 +205,14 @@
     </div>
   </div>
 
+  <div class="webSection">
+    <h2>Trovato con ricerca web <span class="webSection-note">(da verificare)</span></h2>
+    <p class="col-sub">Risultati di una ricerca generica sul web in base alle parole chiave attuali — nessun filtro di qualità, solo un punto di partenza.</p>
+    <div class="stack" id="webStack"><div class="loading">Caricamento…</div></div>
+  </div>
+
   <footer>
-    Questa app si aggiorna da sola: uno scraper gratuito (via GitHub Actions) controlla periodicamente alcune fonti pubbliche (Horizon Europe, MUR/PRIN, COST, Provincia di Bolzano, agenzie DACH, IMISCOE) in base alle parole chiave e alla frequenza impostate sopra. Non usa intelligenza artificiale: alcune voci sono segnalazioni "da verificare" (pagina cambiata o parola chiave trovata) più che elenchi già filtrati con giudizio — controllate sempre scadenze e requisiti sulla fonte ufficiale.
+    Questa app si aggiorna da sola: uno scraper gratuito (via GitHub Actions) controlla periodicamente Horizon Europe, una ricerca generica sul web e le pagine istituzionali configurate, in base alle parole chiave e alla frequenza impostate sopra. Non usa intelligenza artificiale: alcune voci sono segnalazioni "da verificare" (pagina cambiata, parola chiave trovata, o risultato di ricerca) più che elenchi già filtrati con giudizio — controllate sempre scadenze e requisiti sulla fonte ufficiale.
   </footer>
 </div>
 
@@ -317,18 +332,22 @@
   function loadCalls(){
     if(!db) return;
     db.collection("calls").get().then(function(qs){
-      var funding = [], network = [];
+      var funding = [], network = [], web = [];
       document.getElementById("callCount").textContent = qs.size;
       qs.forEach(function(doc){
         var c = doc.data();
         if(!c) return;
-        if(c.category === "network") network.push(c); else funding.push(c);
+        if(c.category === "network") network.push(c);
+        else if(c.category === "web") web.push(c);
+        else funding.push(c);
       });
       renderColumn(document.getElementById("fundingStack"), funding);
       renderColumn(document.getElementById("networkStack"), network);
+      renderColumn(document.getElementById("webStack"), web);
     }).catch(function(){
       document.getElementById("fundingStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
       document.getElementById("networkStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
+      document.getElementById("webStack").innerHTML = '<div class="empty">Impossibile caricare i dati in questo momento.</div>';
       offlineBanner.classList.add("show");
     });
   }
@@ -353,6 +372,25 @@
         saveMsg.textContent = "Errore nel salvataggio, riprova.";
         saveBtn.disabled = false;
       });
+    });
+  }
+
+  var resetBtn = document.getElementById("resetBtn");
+  var resetMsg = document.getElementById("resetMsg");
+  if(resetBtn){
+    resetBtn.addEventListener("click", function(){
+      if(!db) return;
+      var ok = window.confirm("Sicuro di voler eliminare TUTTI i bandi trovati finora? Non si può annullare. Le impostazioni (parole chiave, frequenza) restano invariate.");
+      if(!ok) return;
+      resetBtn.disabled = true; resetMsg.textContent = "Richiesta inviata…";
+      db.collection("admin").doc("reset").set({ requested: true, requestedAt: new Date().toISOString() })
+        .then(function(){
+          resetMsg.textContent = "Fatto — i bandi verranno rimossi alla prossima esecuzione dello scraper (entro 6 ore, o subito se la lanci a mano da GitHub Actions).";
+          resetBtn.disabled = false;
+        }).catch(function(){
+          resetMsg.textContent = "Errore, riprova.";
+          resetBtn.disabled = false;
+        });
     });
   }
 
