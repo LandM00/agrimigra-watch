@@ -1,7 +1,7 @@
 // Service worker minimo: cache dell'app shell per l'installazione come PWA
 // e per un caricamento rapido. I dati (bandi) arrivano sempre live da Firestore,
 // non vengono mai serviti dalla cache.
-const CACHE_NAME = "agrimigra-shell-v1";
+const CACHE_NAME = "grantscout-shell-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",
