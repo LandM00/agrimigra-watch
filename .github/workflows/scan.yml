@@ -27,4 +27,9 @@ jobs:
       - name: Esegui lo scraper
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # Se il workflow è stato avviato a mano (pulsante "Run workflow"),
+          # forza comunque una scansione vera, anche se la frequenza scelta
+          # nell'app non sarebbe ancora scaduta — altrimenti un test manuale
+          # potrebbe non fare nulla, cosa poco intuitiva.
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' }}
         run: python scripts/scan.py

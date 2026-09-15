@@ -453,9 +453,12 @@ def main():
     # Dopo un reset non re-inseriamo i bandi seme: l'utente ha chiesto
     # esplicitamente di ripartire da zero per un nuovo argomento.
 
+    forced = os.environ.get("FORCE_RUN") == "true"
     run_due, reason = should_run(config, meta)
     print("Verifica frequenza: {}".format(reason))
-    if not run_due and not seeded and not was_reset:
+    if forced:
+        print("Esecuzione forzata (avviata a mano da GitHub Actions): scansione comunque in corso.")
+    if not run_due and not seeded and not was_reset and not forced:
         print("Non è ancora il momento di eseguire la scansione. Fine.")
         return
 
