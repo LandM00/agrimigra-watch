@@ -64,9 +64,15 @@ except ImportError:
 FREQ_DAYS = {"weekly": 7, "biweekly": 14, "monthly": 30}
 DEFAULT_FREQUENCY = "biweekly"
 HTTP_HEADERS = {
-    "User-Agent": "GrantScout/1.0 (+strumento privato di monitoraggio bandi; uso non commerciale)"
+    # Un User-Agent "da browser" riduce i falsi blocchi (403) da parte di
+    # siti con protezioni anti-bot basiche: molti bloccano di default gli
+    # User-Agent che si dichiarano script/bot, anche per un uso legittimo
+    # come questo (monitoraggio privato, non commerciale, a bassa frequenza).
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
 }
-HTTP_TIMEOUT = 20
+HTTP_TIMEOUT = 25
 
 # Elenco di default delle pagine istituzionali da controllare, usato SOLO
 # per popolare la collection Firestore "sources" la prima volta (se vuota).
@@ -283,7 +289,7 @@ def seed_if_empty(db):
 
 
 def slugify(text):
-    text = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    text = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
     return text[:80] or "voce"
 
 
@@ -349,9 +355,16 @@ def search_funding_tenders_portal(keywords):
 
 
 def _first(d, keys):
+    """Come dict.get, ma prova più chiavi in ordine e gestisce il caso in
+    cui il portale UE restituisca il valore come lista (es. titolo in più
+    lingue) invece che come testo semplice: in quel caso prende il primo
+    elemento non vuoto della lista."""
     for k in keys:
-        if d.get(k):
-            return d[k]
+        v = d.get(k)
+        if isinstance(v, list):
+            v = next((x for x in v if x), None)
+        if v:
+            return v
     return None
 
 
