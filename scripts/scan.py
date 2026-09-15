@@ -402,8 +402,11 @@ def expand_keywords_with_translation(keywords):
         return keywords
     expanded = list(keywords)
     seen_lower = {k.lower() for k in expanded}
+    attempts = 0
+    failures = 0
     for kw in keywords[:8]:  # limite prudente per non consumare troppa quota gratuita
         for langpair in ("it|en", "en|it"):
+            attempts += 1
             try:
                 resp = requests.get(
                     "https://api.mymemory.translated.net/get",
@@ -417,7 +420,10 @@ def expand_keywords_with_translation(keywords):
                     expanded.append(translated)
                     seen_lower.add(translated.lower())
             except Exception:
+                failures += 1
                 continue
+    print("Traduzione automatica parole chiave: {} nuove parole aggiunte, {} tentativi falliti su {}.".format(
+        len(expanded) - len(keywords), failures, attempts))
     return expanded
 
 
