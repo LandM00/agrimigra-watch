@@ -331,7 +331,7 @@ def search_funding_tenders_portal(keywords):
                 fields = hit.get("metadata", hit)
                 title = _first(fields, ["title", "callTitle"]) or "Bando Horizon Europe"
                 identifier = _first(fields, ["identifier", "callIdentifier", "reference"])
-                deadline = _first(fields, ["deadlineDate", "deadline"])
+                deadline_date = _parse_date(_first(fields, ["deadlineDate", "deadline"]))
                 item_id = "horizon-" + slugify(identifier or title)
                 if item_id in seen_ids:
                     continue
@@ -341,8 +341,11 @@ def search_funding_tenders_portal(keywords):
                     "title": title if not identifier else "{} ({})".format(title, identifier),
                     "funder": "Commissione Europea — Horizon Europe / Funding & Tenders Portal",
                     "category": "funding",
-                    "status": "open",
-                    "deadlineDate": _parse_date(deadline),
+                    # Il filtro "stato" dell'API (non ufficiale) non è affidabile:
+                    # a volte restituisce anche call scadute da anni etichettate
+                    # come aperte. Calcoliamo lo stato noi, dalla scadenza vera.
+                    "status": status_from_deadline(deadline_date),
+                    "deadlineDate": deadline_date,
                     "tags": ["UE", "Horizon Europe"],
                     "summary": "Trovato tramite ricerca automatica per la parola chiave \"{}\" sul portale Funding & Tenders. Verificare rilevanza e requisiti sulla pagina ufficiale.".format(term),
                     "url": "https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/calls-for-proposals?callIdentifier=" + (identifier or ""),
@@ -373,6 +376,49 @@ def _parse_date(value):
         return None
     m = re.search(r"(\d{4}-\d{2}-\d{2})", str(value))
     return m.group(1) if m else None
+
+
+def status_from_deadline(deadline_date):
+    """Se non c'è una scadenza, meglio segnare 'da verificare' piuttosto
+    che dare per aperta una call senza prove."""
+    if not deadline_date:
+        return "watch"
+    today = datetime.now(timezone.utc).date().isoformat()
+    return "closed" if deadline_date < today else "open"
+
+
+def expand_keywords_with_translation(keywords):
+    """Aggiunge automaticamente una traduzione italiano<->inglese di ogni
+    parola chiave, per ampliare la ricerca senza doverle scrivere a mano
+    in entrambe le lingue. Usa MyMemory (mymemory.translated.net), un
+    servizio di traduzione gratuito ma con un limite di utilizzo
+    giornaliero condiviso per indirizzo IP — dato che GitHub Actions usa
+    IP condivisi con moltissimi altri progetti nel mondo, può capitare
+    che il limite sia già esaurito da altri. In quel caso (o per qualsiasi
+    altro errore) questa funzione fallisce in modo silenzioso e restituisce
+    semplicemente le parole originali: è un ampliamento facoltativo, il
+    resto della scansione funziona comunque senza."""
+    if not keywords:
+        return keywords
+    expanded = list(keywords)
+    seen_lower = {k.lower() for k in expanded}
+    for kw in keywords[:8]:  # limite prudente per non consumare troppa quota gratuita
+        for langpair in ("it|en", "en|it"):
+            try:
+                resp = requests.get(
+                    "https://api.mymemory.translated.net/get",
+                    params={"q": kw, "langpair": langpair},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                translated = (data.get("responseData") or {}).get("translatedText")
+                if translated and translated.lower() not in seen_lower:
+                    expanded.append(translated)
+                    seen_lower.add(translated.lower())
+            except Exception:
+                continue
+    return expanded
 
 
 def check_watch_pages(keywords, previous_hashes, sources):
@@ -478,21 +524,29 @@ def main():
     keywords = config.get("keywords") or ["migrazione", "lavoro agricolo", "migrant labour agriculture"]
     print("Scansione in corso con parole chiave: {}".format(keywords))
 
+    search_keywords = expand_keywords_with_translation(keywords)
+    if search_keywords != keywords:
+        print("Parole chiave ampliate con traduzione automatica: {}".format(search_keywords))
+
     previous_hashes = meta.get("pageHashes", {})
 
     sources_checked = []
     all_new_items = []
 
-    horizon_items = search_funding_tenders_portal(keywords)
+    horizon_items = search_funding_tenders_portal(search_keywords)
     sources_checked.append("Horizon Europe / Funding & Tenders Portal ({} risultati)".format(len(horizon_items)))
     all_new_items.extend(horizon_items)
 
-    watch_items, new_hashes = check_watch_pages(keywords, previous_hashes, sources)
+    watch_items, new_hashes = check_watch_pages(search_keywords, previous_hashes, sources)
     sources_checked.append("Pagine monitorate (configurabili in Firestore): {} segnalazioni su {}".format(len(watch_items), len(sources)))
     all_new_items.extend(watch_items)
 
-    closed_count = close_expired_calls(db)
+    # Prima si scrivono i nuovi risultati, POI si chiudono le call scadute:
+    # così una call trovata solo ora ma con scadenza già passata (capita con
+    # l'API non ufficiale del portale UE) viene corretta nella stessa
+    # esecuzione, non in quella successiva.
     written = upsert_calls(db, all_new_items)
+    closed_count = close_expired_calls(db)
 
     db.collection("meta").document("status").set({
         "lastRun": now_iso(),
